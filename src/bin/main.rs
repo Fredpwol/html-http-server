@@ -3,6 +3,7 @@
 use std::net::{TcpListener, TcpStream};
 use std::io::{prelude::*, Error};
 use std::fs;
+use http_server::ThreadPool;
 use regex::Regex;
 use chrono;
 
@@ -14,14 +15,18 @@ use body_templates::HTTP_REQUEST_REGEX;
 
 fn main(){
     let listener = TcpListener::bind("127.0.0.1:3030").unwrap();
+    let pool: ThreadPool = ThreadPool::new(10);
     for stream in listener.incoming(){
         let stream = stream.unwrap();
-        handle_connection(stream);
+        pool.execute(|| {
+            handle_connection(stream);
+        })
     }
 }
 
 
 fn handle_connection(mut stream: TcpStream) {
+    println!("Connection Established with server");
     let mut buffer = [0_u8; 1024];
 
     stream.read(&mut buffer).unwrap();
