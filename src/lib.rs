@@ -8,16 +8,14 @@ use std::{
 
 type Job = Box<dyn FnOnce() + Send + 'static>;
 
-
 enum Message {
     SendMessage(Job),
-    Terminate
+    Terminate,
 }
 
-
-struct ThreadPool {
+pub struct ThreadPool {
     workers: Vec<Worker<usize>>,
-    sender: mpsc::Sender<Job>,
+    sender: mpsc::Sender<Message>,
 }
 
 impl ThreadPool {
@@ -35,35 +33,49 @@ impl ThreadPool {
         }
     }
 
-
     pub fn execute<F>(&self, job: F)
     where
         F: FnOnce() + Send + 'static,
     {
-        let job = Box::new(job);
+        let job = Message::SendMessage(Box::new(job));
         self.sender.send(job).unwrap();
     }
 }
 
 struct Worker<T> {
     id: T,
-    thread: thread::JoinHandle<()>,
+    thread: Option<thread::JoinHandle<()>>,
 }
 
 impl<T> Worker<T> {
-    fn new(id: T, receiver: Arc<Mutex<Receiver<Job>>>) -> Worker<T> {
+    fn new(id: T, receiver: Arc<Mutex<Receiver<Message>>>) -> Worker<T> {
         let thread = thread::spawn(move || loop {
-            let job = receiver.lock().unwrap().recv().unwrap();
-            job();
+            let message = receiver.lock().unwrap().recv().unwrap();
+            match message {
+                Message::SendMessage(job) => {
+                    job();
+                }
+                Message::Terminate => {
+                    break;
+                }
+            }
         });
-        Worker { id, thread }
+        Worker {
+            id,
+            thread: Some(thread),
+        }
     }
 }
 
-impl Drop for ThreadPool{
-    fn drop(&mut self){
-        for _ in 0..self.workers.len(){
-            
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
+        for _ in 0..self.workers.len() {
+            self.sender.send(Message::Terminate).unwrap();
+        }
+
+        for worker in &mut self.workers {
+            let thread = worker.thread.take().unwrap();
+            thread.join().unwrap();
         }
     }
 }
