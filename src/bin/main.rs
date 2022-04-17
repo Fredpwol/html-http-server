@@ -1,7 +1,7 @@
 #[allow(unused_variables)]
 
 use std::net::{TcpListener, TcpStream};
-use std::io::{prelude::*, Error};
+use std::io::{prelude::*, ErrorKind};
 use std::fs;
 use http_server::ThreadPool;
 use regex::Regex;
@@ -41,7 +41,7 @@ fn handle_connection(mut stream: TcpStream) {
     
     let current_date_time = chrono::offset::Utc::now().format("%a, %e %b %Y %T GMT").to_string();
     if method.to_lowercase() == "get"{
-        let content : String = read_html_file(path).unwrap_or( "".to_string());
+        let content : String = read_html_file(path);
         let response = format!("HTTP/1.1 {} {}\r\nDate: {}\r\nServer: Fred/Server (Win32)\r\nContent-Length: {}\r\nContent-Type: text/html\r\n\r\n{}", 200, "OK", current_date_time, content.len(), content);
         stream.write(response.as_bytes()).unwrap();
     }
@@ -54,8 +54,14 @@ fn handle_connection(mut stream: TcpStream) {
    stream.flush().unwrap();
 }
 
-fn read_html_file(p: &str) -> Result<String, Error>{
+fn read_html_file(p: &str) -> String{
     let path = format!("./html{}", if p == "/" { "/index.html" }else{ p });
-    let file_data = fs::read_to_string(path)?;
-    Ok(file_data)
+    let file_data = fs::read_to_string(path).unwrap_or_else(|err| {
+        if err.kind() == ErrorKind::NotFound {
+            return fs::read_to_string("./html/404.html").unwrap_or("".to_string());
+        }else {
+            return "".to_string();
+        }
+    });
+    file_data
 }
